@@ -22,7 +22,7 @@ tabs = st.tabs(["Résumé", "Visualisation", "Analyse"])
 
 with tabs[0]:
     st.header("Résumé du jeu de données et typologie des variables")
-    #st.info("À compléter")
+    
     st.subheader("Les 10 premières lignes du Dataframe train_info :")
     st.dataframe(train_info.head(10))
 
@@ -31,6 +31,10 @@ with tabs[0]:
 
     st.subheader("Types des variables :")
     st.write(clients_type(train_info))
+
+    st.write(f"Valeurs manquantes : {clients_valeur_manquantes(train_info).size}")
+
+    st.write(f"\nValeurs duppliquées : {clients_duplicated_values(train_info).size}")
 
 with tabs[1]:
     st.subheader("Visualisation des variables catégorielles")
