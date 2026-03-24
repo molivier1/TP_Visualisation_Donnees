@@ -7,47 +7,15 @@ st.set_page_config(page_title="Transactions Dashboard", layout="wide")
 
 @st.cache_data
 def load_data():
-    transactions = pd.read_csv("Data/transactions.csv")
-    customers = pd.read_csv("Data/Customer.csv")
-    prod_infos = pd.read_csv("Data/prod_cat_info.csv")
+    clients_a_contacter = pd.read_csv("Data/clients_a_contacter.csv")
+    train_info = pd.read_csv("Data/train_info.csv")
 
-    transactions = transactions.rename(columns={
-        "Store_type": "store_type",
-        "Qty": "qty",
-        "Rate": "rate",
-        "Tax": "tax"
-    })
-    
-    prod_infos = prod_infos.rename(columns={"prod_sub_cat_code": "prod_subcat_code"})
-    customers = customers.rename(columns={"Gender": "gender"})
-    customers = customers.rename(columns={"customer_Id": "cust_id"})
-    
-    transactions["tran_date"] = pd.to_datetime(transactions["tran_date"], dayfirst=True, format='mixed')
-    transactions["year"] = transactions["tran_date"].dt.year
-    transactions["month"] = transactions["tran_date"].dt.month
-    transactions["day"] = transactions["tran_date"].dt.day
-    transactions["weekday"] = transactions["tran_date"].dt.day_name()
+    return (clients_a_contacter, train_info)
 
-    df_tp = pd.merge(
-        transactions,
-        prod_infos,
-        on=["prod_cat_code", "prod_subcat_code"],
-        how="left"
-    )
-
-    df = pd.merge(
-        df_tp,
-        customers,
-        on="cust_id",
-        how="left"
-    )
-
-    return df
-
-df = load_data()
+clients_a_contacter, train_info = load_data()
 
 with st.sidebar:
-    st.title("Filtres")
+    """st.title("Filtres")
 
     store_options = sorted(df["store_type"].dropna().unique().tolist())
     store_sel = st.multiselect("Type de magasin", store_options, default=store_options)
@@ -62,27 +30,27 @@ with st.sidebar:
 
     var_num = st.selectbox("Variable numérique", ["qty", "rate", "tax", "total_amt"])
     # Trouver combien mettre en val par défaut??
-    nb_classes = st.slider("Nombre de classes", value=50)
+    nb_classes = st.slider("Nombre de classes", value=50)"""
 
-df_f = df[df["store_type"].isin(store_sel)].copy()
-df_f = df_f[(df_f["tran_date"] >= pd.to_datetime(start)) & (df_f["tran_date"] <= pd.to_datetime(end))]
+#df_f = df[df["store_type"].isin(store_sel)].copy()
+#df_f = df_f[(df_f["tran_date"] >= pd.to_datetime(start)) & (df_f["tran_date"] <= pd.to_datetime(end))]
 
-if not include_returns:
-    df_f = df_f[df_f["total_amt"] >= 0]
+"""if not include_returns:
+    df_f = df_f[df_f["total_amt"] >= 0]"""
 
 st.title("📊 Dashboard Transactions (dataset fusionné)")
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Transactions", int(df_f.shape[0]))
-c2.metric("Clients uniques", int(df_f["cust_id"].nunique()))
-c3.metric("Ventes nettes", float(df_f["total_amt"].sum()))
-c4.metric("Retours (nb)", int((df_f["total_amt"] < 0).sum()))
+#c1, c2, c3, c4 = st.columns(4)
+#c1.metric("Transactions", int(df_f.shape[0]))
+#c2.metric("Clients uniques", int(df_f["cust_id"].nunique()))
+#c3.metric("Ventes nettes", float(df_f["total_amt"].sum()))
+#c4.metric("Retours (nb)", int((df_f["total_amt"] < 0).sum()))
 
 tabs = st.tabs(["Aperçu", "Distributions", "Temps", "Catégories", "Clients", "Qualité"])
 
 with tabs[0]:
     st.subheader("Aperçu des données filtrées")
-    st.dataframe(df_f.head(100))
+    """st.dataframe(df_f.head(100))
 
     st.subheader("Téléchargement")
     csv = df_f.to_csv(index=False).encode("utf-8")
@@ -91,13 +59,13 @@ with tabs[0]:
         data=csv,
         file_name="transactions_filtrees.csv",
         mime="text/csv"
-    )
+    )"""
 
 # Exercice 1
 with tabs[1]:
     st.subheader("Distributions")
     #st.info("À compléter")
-
+    """
     # Histogramme interactif sur une variable numérique 
     # choisie parmi : qty, rate, tax et total_amt
     st.subheader("Histogramme")
@@ -114,7 +82,7 @@ with tabs[1]:
     # la variable numérique déjà obtenu
     boxplot = px.box(df_f, x = "store_type", y = var_num,
                      title=f"{var_num} en fonction du store_type")
-    st.plotly_chart(boxplot)
+    st.plotly_chart(boxplot)"""
 
 # Exercice 2
 with tabs[2]:
@@ -122,6 +90,7 @@ with tabs[2]:
     #st.info("À compléter")
     # Ici je compte le nb de transactions et le montant total par mois
     # reset_index() permet juste de faire un vrai index et pas la date
+    """
     df_temps = df_f.groupby(pd.Grouper(key = "tran_date", freq = "MS")).agg({
         "cust_id": "count",
         "total_amt": "sum"
@@ -149,8 +118,10 @@ with tabs[2]:
                                    title = "Courbe nb transactions mensuel")
     
     st.plotly_chart(courbe_nb_transactions)
+    """
 
 
+"""
 with tabs[3]:
     st.subheader("Catégories")
     st.info("À compléter")
@@ -162,3 +133,4 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("Qualité des données")
     st.info("À compléter")
+"""
