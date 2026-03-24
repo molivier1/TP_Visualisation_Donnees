@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
+from Clement import *
+
 st.set_page_config(page_title="Transactions Dashboard", layout="wide")
 
 @st.cache_data
@@ -19,8 +21,16 @@ st.title("TP - Visualisation et exploration de données")
 tabs = st.tabs(["Résumé", "Visualisation", "Analyse"])
 
 with tabs[0]:
-    st.subheader("Résumé du jeu de données et typologie des variables")
-    st.info("À compléter")
+    st.header("Résumé du jeu de données et typologie des variables")
+    #st.info("À compléter")
+    st.subheader("Les 10 premières lignes du Dataframe train_info :")
+    st.dataframe(train_info.head(10))
+
+    lignes, colonnes = clients_shape(train_info)
+    st.write(f"Dimensions du Dataframe 'train_info' -> {lignes} lignes et {colonnes} colonnes")
+
+    st.subheader("Types des variables :")
+    st.write(clients_type(train_info))
 
 with tabs[1]:
     st.subheader("Visualisation des variables catégorielles")
