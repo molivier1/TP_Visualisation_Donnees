@@ -1,7 +1,5 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
+import streamlit as st
 
 from Clement import *
 
@@ -16,13 +14,21 @@ def load_data():
 
 clients_a_contacter, train_info = load_data()
 
+variables_categorielles = [
+    "genre",
+    "permis_conduire",
+    "ancien_assure",
+    "age_vehicule",
+    "vehicule_endommage",
+]
+
 st.title("TP - Visualisation et exploration de données")
 
 tabs = st.tabs(["Résumé", "Visualisation", "Analyse"])
 
 with tabs[0]:
     st.header("Résumé du jeu de données et typologie des variables")
-    
+
     st.subheader("Les 10 premières lignes du Dataframe train_info :")
     st.dataframe(train_info.head(10))
 
@@ -38,7 +44,18 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Visualisation des variables catégorielles")
-    st.info("À compléter")
+
+    st.write("Variables catégorielles principales :")
+    st.write(variables_categorielles)
+
+    st.write("Analyse de la distribution des principales variables catégorielles et leur relation avec la variable cible reponse_client")
+
+    for variable in variables_categorielles:
+        st.write(f"Count plot de {variable} selon reponse_client :")
+        st.pyplot(clients_countplot(train_info, variable))
+
+        st.write(f"Pourcentage de réponses positives pour {variable} :")
+        st.write(clients_reponse_par_modalite(train_info, variable))
 
     st.subheader("Visualisation des variables quantitatives")
     st.info("À compléter")
