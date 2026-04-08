@@ -67,3 +67,74 @@ def clients_reponse_par_modalite(clients, variable, cible="reponse_client"):
         .sort_values(ascending=False)
         .round(2)
     )
+
+
+def clients_histplot(clients, variable, cible="reponse_client"):
+    dataframe = clients[[variable, cible]].copy()
+    dataframe[cible] = dataframe[cible].map({0: "Negative", 1: "Positive"})
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.histplot(
+        data=dataframe,
+        x=variable,
+        hue=cible,
+        kde=False,
+        bins=30,
+        palette=["#4C78A8", "#F58518"],
+        alpha=0.6,
+        ax=ax,
+    )
+
+    ax.set_title(f"Histogramme de {variable} selon {cible}")
+    ax.set_xlabel(variable)
+    ax.set_ylabel("Nombre de clients")
+    fig.tight_layout()
+
+    return fig
+
+
+def clients_boxplot(clients, variable, cible="reponse_client"):
+    dataframe = clients[[variable, cible]].copy()
+    dataframe[cible] = dataframe[cible].map({0: "Negative", 1: "Positive"})
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.boxplot(
+        data=dataframe,
+        x=cible,
+        y=variable,
+        hue=cible,
+        palette=["#4C78A8", "#F58518"],
+        ax=ax,
+        legend=False,
+    )
+
+    ax.set_title(f"Boxplot de {variable} selon {cible}")
+    ax.set_xlabel("Reponse client")
+    ax.set_ylabel(variable)
+    fig.tight_layout()
+
+    return fig
+
+
+def clients_kdeplot(clients, variable, cible="reponse_client"):
+    dataframe = clients[[variable, cible]].copy()
+    dataframe[cible] = dataframe[cible].map({0: "Negative", 1: "Positive"})
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.kdeplot(
+        data=dataframe,
+        x=variable,
+        hue=cible,
+        fill=True,
+        common_norm=False,
+        palette=["#4C78A8", "#F58518"],
+        alpha=0.4,
+        ax=ax,
+    )
+
+    ax.set_title(f"Courbe de densite de {variable} selon {cible}")
+    ax.set_xlabel(variable)
+    ax.set_ylabel("Densite")
+    fig.tight_layout()
+
+    return fig

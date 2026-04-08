@@ -5,12 +5,20 @@ from Clement import *
 
 st.set_page_config(page_title="Transactions Dashboard", layout="wide")
 
+
 @st.cache_data
 def load_data():
     clients_a_contacter = pd.read_csv("Data/clients_a_contacter.csv")
     train_info = pd.read_csv("Data/train_info.csv")
 
     return (clients_a_contacter, train_info)
+
+
+def afficher_plot(plot):
+    colonne_gauche, colonne_centre, colonne_droite = st.columns([1, 2, 1])
+    with colonne_centre:
+        st.pyplot(plot)
+
 
 clients_a_contacter, train_info = load_data()
 
@@ -20,6 +28,12 @@ variables_categorielles = [
     "ancien_assure",
     "age_vehicule",
     "vehicule_endommage",
+]
+
+variables_quantitatives = [
+    "age",
+    "prime_annuelle",
+    "anciennete",
 ]
 
 st.title("TP - Visualisation et exploration de données")
@@ -40,7 +54,7 @@ with tabs[0]:
 
     st.write(f"Valeurs manquantes : {clients_valeur_manquantes(train_info).size}")
 
-    st.write(f"\nValeurs duppliquées : {clients_duplicated_values(train_info).size}")
+    st.write(f"\nValeurs dupliquées : {clients_duplicated_values(train_info).size}")
 
 with tabs[1]:
     st.subheader("Visualisation des variables catégorielles")
@@ -52,13 +66,28 @@ with tabs[1]:
 
     for variable in variables_categorielles:
         st.write(f"Count plot de {variable} selon reponse_client :")
-        st.pyplot(clients_countplot(train_info, variable))
+        afficher_plot(clients_countplot(train_info, variable))
 
         st.write(f"Pourcentage de réponses positives pour {variable} :")
         st.write(clients_reponse_par_modalite(train_info, variable))
 
     st.subheader("Visualisation des variables quantitatives")
-    st.info("À compléter")
+
+    st.write("Variables quantitatives principales :")
+    st.write(variables_quantitatives)
+
+    st.write("Analyse distribution des variables quantitatives à l'aide d'histogrammes, "
+             "de boxplots et de courbes de densité selon la variable cible reponse_client")
+
+    for variable in variables_quantitatives:
+        st.write(f"Histogramme de {variable} selon reponse_client :")
+        afficher_plot(clients_histplot(train_info, variable))
+
+        st.write(f"Boxplot de {variable} selon reponse_client :")
+        afficher_plot(clients_boxplot(train_info, variable))
+
+        st.write(f"Courbe de densité de {variable} selon reponse_client :")
+        afficher_plot(clients_kdeplot(train_info, variable))
 
 with tabs[2]:
     st.subheader("Analyse de corrélation")
