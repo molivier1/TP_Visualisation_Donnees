@@ -1,8 +1,8 @@
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -180,6 +180,32 @@ def clients_roc_curve_figure(y_true, y_proba):
     return fig
 
 
+def clients_outliers_summary(clients, variables):
+    rows = []
+    for variable in variables:
+        q1 = clients[variable].quantile(0.25)
+        q3 = clients[variable].quantile(0.75)
+        iqr = q3 - q1
+        borne_basse = q1 - 1.5 * iqr
+        borne_haute = q3 + 1.5 * iqr
+        masque = (clients[variable] < borne_basse) | (clients[variable] > borne_haute)
+        nb_outliers = int(masque.sum())
+        part_outliers = round(100 * nb_outliers / len(clients), 2)
+        conclusion = "A surveiller" if part_outliers >= 5 else "Impact limité"
+        rows.append({
+            "variable": variable,
+            "q1": round(q1, 2),
+            "q3": round(q3, 2),
+            "iqr": round(iqr, 2),
+            "borne_basse": round(borne_basse, 2),
+            "borne_haute": round(borne_haute, 2),
+            "nb_outliers": nb_outliers,
+            "part_outliers_pct": part_outliers,
+            "conclusion_metier": conclusion
+        })
+    return pd.DataFrame(rows)
+
+
 def clients_pr_curve_figure(y_true, y_proba):
     precision, recall, _ = precision_recall_curve(y_true, y_proba)
     pr_auc = auc(recall, precision)
@@ -193,29 +219,48 @@ def clients_pr_curve_figure(y_true, y_proba):
     )
     return fig
 
-def preparer_dataset_complet(df, is_train=True, mappings=None):
+
+def clients_marketing_profile_summary(clients_cibles):
+    if clients_cibles.empty:
+        return pd.DataFrame(columns=["indicateur", "valeur"])
+
+    top_genre = clients_cibles["genre"].mode().iloc[0]
+    top_age_vehicule = clients_cibles["age_vehicule"].mode().iloc[0]
+    top_dommage = clients_cibles["vehicule_endommage"].mode().iloc[0]
+
+    return pd.DataFrame([
+        {"indicateur": "Nombre de clients ciblés", "valeur": len(clients_cibles)},
+        {"indicateur": "Âge moyen", "valeur": round(clients_cibles["age"].mean(), 1)},
+        {"indicateur": "Prime annuelle moyenne", "valeur": round(clients_cibles["prime_annuelle"].mean(), 1)},
+        {"indicateur": "Ancienneté moyenne", "valeur": round(clients_cibles["anciennete"].mean(), 1)},
+        {"indicateur": "Genre majoritaire", "valeur": top_genre},
+        {"indicateur": "Âge véhicule majoritaire", "valeur": top_age_vehicule},
+        {"indicateur": "Véhicule endommagé majoritaire", "valeur": top_dommage},
+    ])
+
+def preparer_dataset_complet(df, is_train=True, artifacts=None):
     """
     Transforme les données. 
-    Si is_train=True : apprend les mappings et les renvoie.
-    Si is_train=False : utilise les mappings fournis pour transformer.
+    Si is_train=True : apprend les transformations et les renvoie.
+    Si is_train=False : utilise les artefacts fournis pour transformer.
     """
     df_prep = df.copy()
+    current_artifacts = {} if artifacts is None else artifacts.copy()
     
     # 1. Tranches d'âge
     df_prep['tranche_age'] = pd.cut(df_prep['age'], bins=7, labels=False)
     
     # 2. Encodage logique métier (Target Encoding)
-    current_mappings = {}
     cols_metier = ['code_regional', 'canal_communication']
+    current_artifacts.setdefault("target_mappings", {})
     
     for col in cols_metier:
         if is_train:
             # On calcule le taux de réponse moyen par modalité sur le train
             mapping = df.groupby(col)['reponse_client'].mean().to_dict()
-            current_mappings[col] = mapping
+            current_artifacts["target_mappings"][col] = mapping
         else:
-            # On utilise le mapping passé en argument (issu du train)
-            mapping = mappings[col] if mappings and col in mappings else {}
+            mapping = current_artifacts.get("target_mappings", {}).get(col, {})
         
         df_prep[f'{col}_score'] = df_prep[col].map(mapping).fillna(0)
     
@@ -224,44 +269,58 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
     dommage_normalise = _normalize_text_series(df_prep['vehicule_endommage'])
     age_vehicule_normalise = _normalize_text_series(df_prep['age_vehicule'])
 
-    df_prep['genre'] = genre_normalise.map({
-        'male': 1,
-        'm': 1,
-        'homme': 1,
-        'female': 0,
-        'femelle': 0,
-        'f': 0
-    }).fillna(0)
-    df_prep['vehicule_endommage'] = dommage_normalise.map({
-        'yes': 1,
-        'oui': 1,
-        'true': 1,
-        '1': 1,
-        'no': 0,
-        'non': 0,
-        'false': 0,
-        '0': 0
-    }).fillna(0)
-    df_prep['age_vehicule'] = age_vehicule_normalise.map({
-        '< 1 year': 0,
-        '< 1 an': 0,
-        '1-2 year': 1,
-        '1-2 years': 1,
-        '1-2 an': 1,
-        '1-2 ans': 1,
-        '> 2 years': 2,
-        '> 2 year': 2,
-        '> 2 ans': 2
-    }).fillna(0)
+    onehot_input = pd.DataFrame({
+        "genre": genre_normalise.replace({"female": "femelle"}),
+        "vehicule_endommage": dommage_normalise.replace({"yes": "oui", "non": "no"})
+    })
+
+    if is_train:
+        onehot_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+        onehot_matrix = onehot_encoder.fit_transform(onehot_input)
+        current_artifacts["onehot_encoder"] = onehot_encoder
+        current_artifacts["onehot_columns"] = onehot_encoder.get_feature_names_out(onehot_input.columns).tolist()
+    else:
+        onehot_encoder = current_artifacts["onehot_encoder"]
+        onehot_matrix = onehot_encoder.transform(onehot_input)
+
+    onehot_df = pd.DataFrame(
+        onehot_matrix,
+        columns=current_artifacts["onehot_columns"],
+        index=df_prep.index
+    )
+
+    age_vehicule_series = age_vehicule_normalise.replace({
+        '< 1 year': '< 1 an',
+        '1-2 year': '1-2 an',
+        '1-2 years': '1-2 an',
+        '> 2 year': '> 2 ans',
+        '> 2 years': '> 2 ans'
+    })
+
+    if is_train:
+        ordinal_encoder = OrdinalEncoder(
+            categories=[['< 1 an', '1-2 an', '> 2 ans']],
+            handle_unknown='use_encoded_value',
+            unknown_value=-1
+        )
+        age_vehicule_encoded = ordinal_encoder.fit_transform(age_vehicule_series.to_frame())
+        current_artifacts["ordinal_encoder"] = ordinal_encoder
+    else:
+        ordinal_encoder = current_artifacts["ordinal_encoder"]
+        age_vehicule_encoded = ordinal_encoder.transform(age_vehicule_series.to_frame())
+
+    df_prep['age_vehicule'] = age_vehicule_encoded.ravel()
+    df_prep = pd.concat([df_prep, onehot_df], axis=1)
     
     # 3.bis Création de variables d'interaction (Demandé dans le sujet)
     # On combine la tranche d'âge avec l'état du véhicule et l'ancienneté d'assurance
-    df_prep['inter_age_dommage'] = df_prep['tranche_age'] * df_prep['vehicule_endommage']
+    dommage_col = 'vehicule_endommage_oui' if 'vehicule_endommage_oui' in df_prep.columns else 'vehicule_endommage_yes'
+    df_prep['inter_age_dommage'] = df_prep['tranche_age'] * df_prep.get(dommage_col, 0)
     df_prep['inter_age_ancien_assure'] = df_prep['tranche_age'] * df_prep.get('ancien_assure', 0)
-    df_prep['inter_vehicule_ancien'] = df_prep['age_vehicule'] * df_prep['vehicule_endommage']
+    df_prep['inter_vehicule_ancien'] = df_prep['age_vehicule'] * df_prep.get(dommage_col, 0)
 
     # 4. Nettoyage des colonnes non prédictives
-    cols_to_drop = ['id_client', 'code_regional', 'canal_communication']
+    cols_to_drop = ['id_client', 'code_regional', 'canal_communication', 'genre', 'vehicule_endommage']
     # On ne drop 'reponse_client' que s'il existe (il n'existe pas dans le fichier de prod)
     if 'reponse_client' in df_prep.columns and not is_train:
         cols_to_drop.append('reponse_client')
@@ -270,7 +329,7 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
     df_prep = df_prep.fillna(0)
     
     if is_train:
-        return df_prep, current_mappings
+        return df_prep, current_artifacts
     return df_prep
 
 def entrainer_modele_rf(df_train_prepare):
@@ -297,18 +356,39 @@ def entrainer_modele_rf(df_train_prepare):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Entraînement
-    model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, class_weight='balanced')
+    # Recherche légère d'hyperparamètres sur un sous-échantillon pour garder une app fluide
+    param_grid = {
+        'n_estimators': [100, 150],
+        'max_depth': [8, 12],
+        'min_samples_leaf': [1, 3]
+    }
+    X_tune, _, y_tune, _ = train_test_split(
+        X_train_scaled,
+        y_train,
+        train_size=0.25,
+        random_state=42,
+        stratify=y_train
+    )
+    base_model = RandomForestClassifier(random_state=42, class_weight='balanced', n_jobs=1)
+    grid = GridSearchCV(
+        estimator=base_model,
+        param_grid=param_grid,
+        scoring='f1',
+        cv=3,
+        n_jobs=1
+    )
+    grid.fit(X_tune, y_tune)
+    model = grid.best_estimator_
     model.fit(X_train_scaled, y_train)
     
-    return model, scaler, X_test_scaled, y_test, X.columns
+    return model, scaler, X_test_scaled, y_test, X.columns, grid.best_params_, grid.best_score_
 
-def generer_predictions_marketing(model, scaler, df_clients, feature_names, mappings):
+def generer_predictions_marketing(model, scaler, df_clients, feature_names, artifacts):
     """
     Prépare les données de prod en utilisant les outils (scaler, mappings) du train.
     """
     # 1. Préparation avec les mappings du train
-    df_prep = preparer_dataset_complet(df_clients, is_train=False, mappings=mappings)
+    df_prep = preparer_dataset_complet(df_clients, is_train=False, artifacts=artifacts)
     
     # 2. Alignement des colonnes (sécurité)
     X_prod = df_prep[feature_names]

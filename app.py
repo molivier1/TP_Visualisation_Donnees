@@ -67,6 +67,16 @@ with tabs[0]:
         st.subheader("Détail valeurs manquantes")
         # Conversion en DataFrame et reset_index pour éviter l'erreur Arrow
         st.dataframe(clients_missing_values_summary(train_info).reset_index(), width="stretch")
+    
+    st.divider()
+    st.subheader("Valeurs aberrantes")
+    outliers_df = clients_outliers_summary(train_info, variables_quantitatives)
+    st.dataframe(outliers_df, width="stretch")
+    st.caption(
+        "Conclusion métier : les valeurs extrêmes portent surtout sur la prime annuelle et "
+        "certains profils anciens. Elles ne sont pas supprimées ici car elles peuvent traduire "
+        "des segments clients réels, mais elles sont prises en charge par `RobustScaler`."
+    )
 
 with tabs[1]:
     st.header("Analyse Univariée")
@@ -134,13 +144,13 @@ with tabs[3]:
     if st.button("Lancer l'entraînement du modèle"):
         with st.spinner("Transformation des données et entraînement..."):
             # CORRECTION 1 : Bien récupérer le tuple (DF, Mappings)
-            df_model_prep, mappings_entrainement = preparer_dataset_complet(train_info, is_train=True)
+            df_model_prep, preprocessing_artifacts = preparer_dataset_complet(train_info, is_train=True)
             
             # Sauvegarde dans la session pour l'onglet suivant
-            st.session_state['mappings'] = mappings_entrainement
+            st.session_state['preprocessing_artifacts'] = preprocessing_artifacts
             
             # CORRECTION 2 : Bien récupérer les 5 éléments du modèle
-            model, scaler, X_test, y_test, feature_names = entrainer_modele_rf(df_model_prep)
+            model, scaler, X_test, y_test, feature_names, best_params, best_cv_f1 = entrainer_modele_rf(df_model_prep)
             
             # Sauvegarde des objets du modèle
             st.session_state['model'] = model
@@ -164,6 +174,16 @@ with tabs[3]:
             m1.metric("F1-score", f"{f1:.3f}")
             m2.metric("ROC-AUC", f"{roc_auc:.3f}")
             m3.metric("PR-AUC", f"{pr_auc:.3f}")
+
+            st.subheader("Optimisation légère des hyperparamètres")
+            st.write({
+                "meilleurs_parametres": best_params,
+                "meilleur_f1_cv": round(best_cv_f1, 4)
+            })
+            st.caption(
+                "Cette recherche reste volontairement compacte pour garder une application fluide, "
+                "tout en justifiant le choix final du modèle."
+            )
             
             c1, c2 = st.columns(2)
             with c1:
@@ -202,7 +222,7 @@ with tabs[4]:
             model = st.session_state['model']
             scaler = st.session_state['scaler']
             feature_names = st.session_state['feature_names']
-            mappings = st.session_state['mappings']
+            preprocessing_artifacts = st.session_state['preprocessing_artifacts']
             
             # Appel de la fonction de prédiction
             liste_finale = generer_predictions_marketing(
@@ -210,7 +230,7 @@ with tabs[4]:
                 scaler, 
                 clients_a_contacter, 
                 feature_names, 
-                mappings
+                preprocessing_artifacts
             )
             
             # --- Affichage des résultats ---
@@ -222,10 +242,24 @@ with tabs[4]:
             
             with col2:
                 st.subheader("Profil des cibles")
-                cibles = liste_finale[liste_finale['strategie_marketing'] == "À CIBLER (Zone d'influence)"]
+                cibles = liste_finale[liste_finale['strategie_marketing'].str.contains("CIBLER", na=False)]
                 st.metric("Clients prioritaires", len(cibles))
                 st.write(f"Âge moyen : {round(cibles['age'].mean(), 1)} ans")
+                st.write(f"Prime annuelle moyenne : {round(cibles['prime_annuelle'].mean(), 1)}")
             
+            st.divider()
+            st.subheader("Profil synthétique des clients à cibler")
+            st.dataframe(clients_marketing_profile_summary(cibles), width="stretch")
+
+            st.subheader("Répartition des cibles par profil")
+            p1, p2, p3 = st.columns(3)
+            with p1:
+                afficher_plot(px.histogram(cibles, x="genre", color="genre", title="Genre des cibles"))
+            with p2:
+                afficher_plot(px.histogram(cibles, x="age_vehicule", color="age_vehicule", title="Âge du véhicule"))
+            with p3:
+                afficher_plot(px.histogram(cibles, x="vehicule_endommage", color="vehicule_endommage", title="Véhicule endommagé"))
+
             st.divider()
             st.subheader("Liste prioritaires")
             st.dataframe(cibles.sort_values(by='probabilite_souscription', ascending=False))
