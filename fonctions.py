@@ -2,9 +2,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler, OneHotEncoder, OrdinalEncoder
+from sklearn.compose import ColumnTransformer
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 
 
 def clients_shape(clients):
@@ -55,7 +57,7 @@ def clients_histplot(clients, variable, cible="reponse_client"):
         x=variable,
         color=cible,
         nbins=30,
-        marginal="rug",
+        # marginal="rug" supprimé car trop lourd pour les grands datasets
         title=f"Histogramme de {variable} selon {cible}",
         color_discrete_map={"Negative": "#4C78A8", "Positive": "#F58518"},
         opacity=0.7
@@ -87,7 +89,7 @@ def clients_kdeplot(clients, variable, cible="reponse_client"):
         dataframe,
         x=variable,
         color=cible,
-        marginal="violin",
+        # marginal="violin" supprimé pour améliorer la fluidité
         histnorm='probability density',
         title=f"Distribution (Densité) de {variable} selon {cible}",
         color_discrete_map={"Negative": "#4C78A8", "Positive": "#F58518"},
@@ -147,6 +149,11 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
     Si is_train=False : utilise les mappings fournis pour transformer.
     """
     df_prep = df.copy()
+
+    # 0. Optimisation mémoire (Demandé dans le sujet)
+    for col in df_prep.columns:
+        if df_prep[col].nunique() < 10 and col != 'reponse_client':
+            df_prep[col] = df_prep[col].astype('category')
     
     # 1. Tranches d'âge
     df_prep['tranche_age'] = pd.cut(df_prep['age'], bins=7, labels=False)
@@ -171,6 +178,12 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
     df_prep['vehicule_endommage'] = df_prep['vehicule_endommage'].map({'Yes': 1, 'No': 0}).fillna(0)
     df_prep['age_vehicule'] = df_prep['age_vehicule'].map({'< 1 Year': 0, '1-2 Year': 1, '> 2 Years': 2}).fillna(0)
     
+    # 3.bis Création de variables d'interaction (Demandé dans le sujet)
+    # On combine la tranche d'âge avec l'état du véhicule et l'ancienneté d'assurance
+    df_prep['inter_age_dommage'] = df_prep['tranche_age'] * df_prep['vehicule_endommage']
+    df_prep['inter_age_ancien_assure'] = df_prep['tranche_age'] * df_prep.get('ancien_assure', 0)
+    df_prep['inter_vehicule_ancien'] = df_prep['age_vehicule'] * df_prep['vehicule_endommage']
+
     # 4. Nettoyage des colonnes non prédictives
     cols_to_drop = ['id_client', 'code_regional', 'canal_communication']
     # On ne drop 'reponse_client' que s'il existe (il n'existe pas dans le fichier de prod)
@@ -193,16 +206,31 @@ def entrainer_modele_rf(df_train_prepare):
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    # On initialise le scaler
-    scaler = StandardScaler()
+    # Stratégie de mise à l'échelle différenciée
+    cols_minmax = ['age', 'permis_conduire'] if 'permis_conduire' in X.columns else ['age']
+    cols_robust = ['prime_annuelle']
+    cols_standard = [c for c in X.columns if c not in cols_minmax + cols_robust]
+
+    scaler = ColumnTransformer([
+        ('minmax', MinMaxScaler(), cols_minmax),
+        ('robust', RobustScaler(), cols_robust),
+        ('std', StandardScaler(), cols_standard)
+    ])
+
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Entraînement
-    model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, class_weight='balanced')
-    model.fit(X_train_scaled, y_train)
+    # 5. Optimisation via GridSearch (Optionnel mais recommandé dans le sujet)
+    # Pour gagner du temps en TP, on peut limiter la grille
+    rf = RandomForestClassifier(random_state=42, class_weight='balanced')
+    param_grid = {
+        'n_estimators': [100],
+        'max_depth': [5, 10, 15]
+    }
+    grid_search = GridSearchCV(rf, param_grid, cv=3, scoring='f1')
+    grid_search.fit(X_train_scaled, y_train)
     
-    return model, scaler, X_test_scaled, y_test, X.columns
+    return grid_search.best_estimator_, scaler, X_test_scaled, y_test, X.columns
 
 def generer_predictions_marketing(model, scaler, df_clients, feature_names, mappings):
     """

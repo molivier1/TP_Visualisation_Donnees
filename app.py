@@ -14,9 +14,9 @@ def load_data():
     return (clients_a_contacter, train_info)
 
 
-def afficher_plot(plot, use_container_width=True):
+def afficher_plot(plot, width="stretch"):
     """Affiche un plot Plotly dans Streamlit."""
-    st.plotly_chart(plot, use_container_width=use_container_width)
+    st.plotly_chart(plot, use_container_width=(width=="stretch"))
 
 clients_a_contacter, train_info = load_data()
 
@@ -55,12 +55,13 @@ tabs = st.tabs(["Résumé", "Visualisation", "Analyse", "Modélisation", "Strat�
 
 with tabs[0]:
     st.subheader("Aperçu des données")
-    st.dataframe(train_info.head(50), use_container_width=True)
+    st.dataframe(train_info.head(50), width="stretch")
     
     col_missing, col_types = st.columns(2)
     with col_missing:
         st.subheader("Détail valeurs manquantes")
-        st.dataframe(clients_missing_values_summary(train_info))
+        # Conversion en DataFrame et reset_index pour éviter l'erreur Arrow
+        st.dataframe(clients_missing_values_summary(train_info).reset_index(), width="stretch")
 
 with tabs[1]:
     st.header("Analyse Univariée")
@@ -76,7 +77,8 @@ with tabs[1]:
             afficher_plot(clients_countplot(train_info, var_cat))
         with c2:
             st.write("**Taux de réponse par modalité (%)**")
-            st.dataframe(clients_reponse_par_modalite(train_info, var_cat), use_container_width=True)
+            # Conversion pour Arrow
+            st.dataframe(clients_reponse_par_modalite(train_info, var_cat).reset_index(), width="stretch")
             
     else:
         var_quant = st.selectbox("Choisir une variable quantitative :", variables_quantitatives)
@@ -134,13 +136,22 @@ with tabs[3]:
             st.session_state['feature_names'] = feature_names
 
             # 3. Métriques
-            from sklearn.metrics import classification_report
+            from sklearn.metrics import classification_report, roc_curve, auc
             y_pred = model.predict(X_test)
+            y_probs = model.predict_proba(X_test)[:, 1]
             
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Performances du modèle")
                 st.code(classification_report(y_test, y_pred))
+                
+                # Ajout Courbe ROC
+                fpr, tpr, _ = roc_curve(y_test, y_probs)
+                roc_auc = auc(fpr, tpr)
+                fig_roc = px.area(x=fpr, y=tpr, title=f'Courbe ROC (AUC={roc_auc:.2f})',
+                                  labels={'x':'Taux de Faux Positifs', 'y':'Taux de Vrais Positifs'})
+                fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
+                st.plotly_chart(fig_roc, use_container_width=True)
             
             with c2:
                 st.subheader("Importance des variables")
