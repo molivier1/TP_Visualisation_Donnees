@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from sklearn.metrics import classification_report, f1_score, roc_auc_score, average_precision_score
 
 from fonctions import *
 
@@ -16,7 +17,7 @@ def load_data():
 
 def afficher_plot(plot, width="stretch"):
     """Affiche un plot Plotly dans Streamlit."""
-    st.plotly_chart(plot, use_container_width=(width=="stretch"))
+    st.plotly_chart(plot, width=width)
 
 clients_a_contacter, train_info = load_data()
 
@@ -49,7 +50,11 @@ with st.sidebar:
     
     st.divider()
     st.subheader("Types de données")
-    st.write(clients_type(train_info))
+    types_df = clients_type(train_info).astype(str).rename("dtype").reset_index().rename(columns={"index": "variable"})
+    st.dataframe(
+        types_df,
+        width="stretch"
+    )
 
 tabs = st.tabs(["Résumé", "Visualisation", "Analyse", "Modélisation", "Stratégie Marketing"])
 
@@ -103,6 +108,13 @@ with tabs[2]:
     with col_target:
         st.subheader("Distribution Cible")
         afficher_plot(clients_target_distribution(train_info))
+        nb_negatifs = int((train_info["reponse_client"] == 0).sum())
+        nb_positifs = int((train_info["reponse_client"] == 1).sum())
+        taux_positifs = train_info["reponse_client"].mean() * 100
+        st.caption(
+            f"Classes observées : {nb_negatifs:,} non intéressés et {nb_positifs:,} intéressés "
+            f"({taux_positifs:.2f}% de classe positive)."
+        )
 
     with col_corr:
         st.subheader("Matrice de Corrélation")
@@ -135,9 +147,23 @@ with tabs[3]:
             st.session_state['scaler'] = scaler
             st.session_state['feature_names'] = feature_names
 
-            # 3. Métriques
-            from sklearn.metrics import classification_report
             y_pred = model.predict(X_test)
+            y_proba = model.predict_proba(X_test)[:, 1]
+            f1 = f1_score(y_test, y_pred)
+            roc_auc = roc_auc_score(y_test, y_proba)
+            pr_auc = average_precision_score(y_test, y_proba)
+
+            st.subheader("Lecture du déséquilibre de classes")
+            st.info(
+                "La classe positive est minoritaire dans `train_info.csv`, donc les métriques "
+                "F1, ROC-AUC, PR-AUC et la matrice de confusion sont plus parlantes que "
+                "l'accuracy seule."
+            )
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("F1-score", f"{f1:.3f}")
+            m2.metric("ROC-AUC", f"{roc_auc:.3f}")
+            m3.metric("PR-AUC", f"{pr_auc:.3f}")
             
             c1, c2 = st.columns(2)
             with c1:
@@ -153,7 +179,15 @@ with tabs[3]:
                 
                 fig_imp = px.bar(importances, x='Importance', y='Feature', orientation='h',
                                  color_discrete_sequence=["#F58518"])
-                st.plotly_chart(fig_imp, use_container_width=True)
+                st.plotly_chart(fig_imp, width="stretch")
+
+            c3, c4 = st.columns(2)
+            with c3:
+                afficher_plot(clients_confusion_matrix_figure(y_test, y_pred))
+                afficher_plot(clients_roc_curve_figure(y_test, y_proba))
+
+            with c4:
+                afficher_plot(clients_pr_curve_figure(y_test, y_proba))
 
 
 with tabs[4]:
@@ -184,7 +218,7 @@ with tabs[4]:
             with col1:
                 st.subheader("Répartition")
                 fig_pie = px.pie(liste_finale, names='strategie_marketing', color_discrete_sequence=px.colors.qualitative.Safe)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
             
             with col2:
                 st.subheader("Profil des cibles")

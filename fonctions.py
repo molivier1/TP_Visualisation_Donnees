@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.compose import ColumnTransformer
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix, roc_curve, precision_recall_curve, auc
 
 
 def clients_shape(clients):
@@ -19,6 +20,14 @@ def clients_missing_values_summary(clients):
 
 def clients_duplicated_rows_count(clients):
     return clients.duplicated().sum()
+
+
+def _normalize_text_series(series):
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.lower()
+    )
 
 def clients_countplot(clients, variable, cible="reponse_client"):
     dataframe = clients[[variable, cible]].copy()
@@ -111,7 +120,7 @@ def clients_correlation_matrix(clients):
     return fig
 
 def clients_target_distribution(clients, cible="reponse_client"):
-    counts = clients[cible].value_counts()
+    counts = clients[cible].value_counts().sort_index()
     fig = px.pie(
         values=counts.values,
         names=["Non Intéressé (0)", "Intéressé (1)"],
@@ -141,6 +150,49 @@ def clients_scatter_relation(clients, x, y, cible="reponse_client"):
     
     return fig
 
+
+def clients_confusion_matrix_figure(y_true, y_pred):
+    cm = confusion_matrix(y_true, y_pred)
+    fig = px.imshow(
+        cm,
+        text_auto=True,
+        x=["Prédit 0", "Prédit 1"],
+        y=["Réel 0", "Réel 1"],
+        color_continuous_scale="Blues",
+        title="Matrice de confusion"
+    )
+    fig.update_layout(xaxis_title="Prédiction", yaxis_title="Valeur réelle")
+    return fig
+
+
+def clients_roc_curve_figure(y_true, y_proba):
+    fpr, tpr, _ = roc_curve(y_true, y_proba)
+    roc_auc = auc(fpr, tpr)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines", name=f"ROC AUC = {roc_auc:.3f}"))
+    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Référence", line=dict(dash="dash")))
+    fig.update_layout(
+        title="Courbe ROC",
+        xaxis_title="Taux de faux positifs",
+        yaxis_title="Taux de vrais positifs"
+    )
+    return fig
+
+
+def clients_pr_curve_figure(y_true, y_proba):
+    precision, recall, _ = precision_recall_curve(y_true, y_proba)
+    pr_auc = auc(recall, precision)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=recall, y=precision, mode="lines", name=f"PR AUC = {pr_auc:.3f}"))
+    fig.update_layout(
+        title="Courbe Precision-Recall",
+        xaxis_title="Recall",
+        yaxis_title="Precision"
+    )
+    return fig
+
 def preparer_dataset_complet(df, is_train=True, mappings=None):
     """
     Transforme les données. 
@@ -168,9 +220,39 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
         df_prep[f'{col}_score'] = df_prep[col].map(mapping).fillna(0)
     
     # 3. Encodage des variables binaires et ordinales
-    df_prep['genre'] = df_prep['genre'].map({'Male': 1, 'Female': 0}).fillna(0)
-    df_prep['vehicule_endommage'] = df_prep['vehicule_endommage'].map({'Yes': 1, 'No': 0}).fillna(0)
-    df_prep['age_vehicule'] = df_prep['age_vehicule'].map({'< 1 Year': 0, '1-2 Year': 1, '> 2 Years': 2}).fillna(0)
+    genre_normalise = _normalize_text_series(df_prep['genre'])
+    dommage_normalise = _normalize_text_series(df_prep['vehicule_endommage'])
+    age_vehicule_normalise = _normalize_text_series(df_prep['age_vehicule'])
+
+    df_prep['genre'] = genre_normalise.map({
+        'male': 1,
+        'm': 1,
+        'homme': 1,
+        'female': 0,
+        'femelle': 0,
+        'f': 0
+    }).fillna(0)
+    df_prep['vehicule_endommage'] = dommage_normalise.map({
+        'yes': 1,
+        'oui': 1,
+        'true': 1,
+        '1': 1,
+        'no': 0,
+        'non': 0,
+        'false': 0,
+        '0': 0
+    }).fillna(0)
+    df_prep['age_vehicule'] = age_vehicule_normalise.map({
+        '< 1 year': 0,
+        '< 1 an': 0,
+        '1-2 year': 1,
+        '1-2 years': 1,
+        '1-2 an': 1,
+        '1-2 ans': 1,
+        '> 2 years': 2,
+        '> 2 year': 2,
+        '> 2 ans': 2
+    }).fillna(0)
     
     # 3.bis Création de variables d'interaction (Demandé dans le sujet)
     # On combine la tranche d'âge avec l'état du véhicule et l'ancienneté d'assurance
