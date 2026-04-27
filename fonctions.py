@@ -2,11 +2,10 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler, OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.compose import ColumnTransformer
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV
 
 
 def clients_shape(clients):
@@ -149,11 +148,6 @@ def preparer_dataset_complet(df, is_train=True, mappings=None):
     Si is_train=False : utilise les mappings fournis pour transformer.
     """
     df_prep = df.copy()
-
-    # 0. Optimisation mémoire (Demandé dans le sujet)
-    for col in df_prep.columns:
-        if df_prep[col].nunique() < 10 and col != 'reponse_client':
-            df_prep[col] = df_prep[col].astype('category')
     
     # 1. Tranches d'âge
     df_prep['tranche_age'] = pd.cut(df_prep['age'], bins=7, labels=False)
@@ -206,7 +200,8 @@ def entrainer_modele_rf(df_train_prepare):
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    # Stratégie de mise à l'échelle différenciée
+    # Stratégie de mise à l'échelle différenciée (Demandé dans le sujet)
+    # MinMaxScaler: age, permis_conduire / RobustScaler: prime_annuelle / StandardScaler: reste
     cols_minmax = ['age', 'permis_conduire'] if 'permis_conduire' in X.columns else ['age']
     cols_robust = ['prime_annuelle']
     cols_standard = [c for c in X.columns if c not in cols_minmax + cols_robust]
@@ -220,17 +215,11 @@ def entrainer_modele_rf(df_train_prepare):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # 5. Optimisation via GridSearch (Optionnel mais recommandé dans le sujet)
-    # Pour gagner du temps en TP, on peut limiter la grille
-    rf = RandomForestClassifier(random_state=42, class_weight='balanced')
-    param_grid = {
-        'n_estimators': [100],
-        'max_depth': [5, 10, 15]
-    }
-    grid_search = GridSearchCV(rf, param_grid, cv=3, scoring='f1')
-    grid_search.fit(X_train_scaled, y_train)
+    # Entraînement
+    model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, class_weight='balanced')
+    model.fit(X_train_scaled, y_train)
     
-    return grid_search.best_estimator_, scaler, X_test_scaled, y_test, X.columns
+    return model, scaler, X_test_scaled, y_test, X.columns
 
 def generer_predictions_marketing(model, scaler, df_clients, feature_names, mappings):
     """

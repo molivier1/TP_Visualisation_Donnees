@@ -136,22 +136,13 @@ with tabs[3]:
             st.session_state['feature_names'] = feature_names
 
             # 3. Métriques
-            from sklearn.metrics import classification_report, roc_curve, auc
+            from sklearn.metrics import classification_report
             y_pred = model.predict(X_test)
-            y_probs = model.predict_proba(X_test)[:, 1]
             
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Performances du modèle")
                 st.code(classification_report(y_test, y_pred))
-                
-                # Ajout Courbe ROC
-                fpr, tpr, _ = roc_curve(y_test, y_probs)
-                roc_auc = auc(fpr, tpr)
-                fig_roc = px.area(x=fpr, y=tpr, title=f'Courbe ROC (AUC={roc_auc:.2f})',
-                                  labels={'x':'Taux de Faux Positifs', 'y':'Taux de Vrais Positifs'})
-                fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
-                st.plotly_chart(fig_roc, use_container_width=True)
             
             with c2:
                 st.subheader("Importance des variables")
